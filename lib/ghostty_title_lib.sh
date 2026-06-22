@@ -24,11 +24,27 @@ gt_sanitize_title() {
   printf '%s' "$raw" | cut -c1-40
 }
 
-# Resolve the real controlling-tty device path. Optional arg overrides the
-# `ps` lookup (for tests). Falls back to /dev/tty when unknown.
+# Resolve the real controlling-tty device path. The hook is spawned detached
+# from the terminal (its own tty is ??), so we walk the parent chain until we
+# hit an ancestor that owns a real tty (the `claude`/shell process on the
+# Ghostty pts). Optional arg overrides the lookup for tests. Falls back to
+# /dev/tty when nothing is found.
 gt_resolve_tty() {
-  local t="${1-__UNSET__}"
-  [ "$t" = "__UNSET__" ] && t=$(ps -o tty= -p $$ 2>/dev/null | tr -d ' ')
+  local t pid
+  if [ "${1-__UNSET__}" != "__UNSET__" ]; then
+    t="$1"
+  else
+    pid=$$
+    t=""
+    while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ]; do
+      t=$(ps -o tty= -p "$pid" 2>/dev/null | tr -d ' ')
+      case "$t" in
+        ""|"?"|"??") ;;          # detached: keep walking up
+        *) break ;;              # found a real tty
+      esac
+      pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+    done
+  fi
   case "$t" in
     ""|"?"|"??") printf '/dev/tty' ;;
     /dev/*)      printf '%s' "$t" ;;

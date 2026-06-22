@@ -1,0 +1,5 @@
+{"type":"user","message":{"role":"user","content":"第一条 帮我看登录"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"好的"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"第二条 改下加密"}]}}
+{"type":"user","message":{"role":"user","content":"第三条 跑测试"}}
+{"type":"user","message":{"role":"user","content":"第四条 提交代码"}}

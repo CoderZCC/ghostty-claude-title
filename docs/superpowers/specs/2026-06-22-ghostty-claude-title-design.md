@@ -126,10 +126,17 @@ spawn 的 `claude -p`。那个 headless claude 同样会触发 `UserPromptSubmit
 倾向 `setsid`/`nohup` 脱离；但 `setsid` 会丢掉**控制终端**，`/dev/tty`
 这个「魔法设备」随之失效，写不进那个 tab。
 
-解法：在**前台 hook**（仍持有控制终端）里用 `ps -o tty= -p $$` 解析出
-**真实设备路径** `/dev/ttysNNN`，作为参数传给后台 worker。worker 写的是一个
-**具体设备文件**，不要求自己持有控制终端，因此 `nohup &` 脱离后仍能精确写到
-原来的 Ghostty tab。
+解法：在**前台 hook**里解析出**真实设备路径** `/dev/ttysNNN`，作为参数传给
+后台 worker。worker 写的是一个**具体设备文件**，不要求自己持有控制终端，因此
+`nohup &` 脱离后仍能精确写到原来的 Ghostty tab。
+
+> ⚠️ **关键修正**（2026-06-22 真机实证）：原以为前台 hook「仍持有控制终端」，
+> 实测 **Claude Code 把 hook/工具子进程从终端剥离**（`ps -o tty= -p $$` 返回
+> `??`，`/dev/tty` 报 device not configured）。真正持有 Ghostty pts（`ttys003`）
+> 的是**祖先 `claude` 进程**。因此 `gt_resolve_tty` 改为**沿 PPID 链上溯**，
+> 找到第一个有真 tty 的祖先返回其设备路径。实测从被剥离的子进程能正确解析到
+> `/dev/ttys003`，并成功写入标题。这是整个工具能否工作的命门——若只看 `$$`
+> 的 tty，工具会全程静默 no-op。
 
 ## 7. 已知边界与权衡
 

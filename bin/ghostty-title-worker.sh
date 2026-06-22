@@ -14,9 +14,17 @@ transcript=$(printf '%s' "$input" | jq -r '.transcript_path // ""')
 
 recent=$(gt_extract_recent_user_messages "$transcript" 3)
 ctx=$(printf '%s\n%s' "$recent" "$prompt")
-instr='用最多 6 个字概括下面对话正在做的事，只输出主题本身，不要标点、不要解释。'
+sys='你是终端标题生成器。只输出最多 6 个中文字概括用户对话主题，不要标点、不要解释、不要任何多余文字、不要使用任何工具。'
 
-topic=$("$claude_bin" -p --model haiku "$instr"$'\n\n'"$ctx" 2>/dev/null) || exit 0
+# `claude -p` is an agentic harness: with tools + project CLAUDE.md it will
+# explore the repo and ramble for minutes. Force a single stateless completion:
+# no settings (also stops this global hook re-firing), no MCP, no tools.
+topic=$("$claude_bin" -p --model haiku \
+  --setting-sources '' --strict-mcp-config \
+  --allowedTools '' \
+  --disallowedTools 'Bash,Read,Edit,Write,Glob,Grep,WebFetch,WebSearch,Task,TodoWrite' \
+  --system-prompt "$sys" \
+  "$ctx" 2>/dev/null) || exit 0
 topic=$(gt_sanitize_title "$topic")
 [ -n "$topic" ] || exit 0
 

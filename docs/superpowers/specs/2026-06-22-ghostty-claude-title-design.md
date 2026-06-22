@@ -82,8 +82,24 @@ haiku 调用 2~4s，同步会给每次发言加可感延迟。
   筛 `.type=="user"` 且 `.message.content` 为文本的，取末尾 3 条文本。
 - 主题指令（中文，要求只输出 3~6 字、不带标点/解释）：
   `用最多 6 个字概括下面对话正在做的事，只输出主题本身，不要标点、不要解释。`
-- 调用：`topic=$(printf '%s' "$ctx" | claude -p --model haiku "<指令>")`
-  —— 失败或空则不写标题，直接退出（保持原标题，不写垃圾）。
+- 调用见下方「关键修正」——指令进 `--system-prompt`、上下文进 positional
+  prompt；失败或空则不写标题，直接退出（保持原标题，不写垃圾）。
+
+> ⚠️ **关键修正**（2026-06-22 真机实证）：`claude -p` 不是单次补全，而是
+> **带工具的 agent harness**。直接 `claude -p "总结…"` 在真实项目目录里会
+> 加载该项目 CLAUDE.md、动用 Bash/Read 去探索代码、画出整页流程图，**耗时
+> 近 3 分钟**，真正的主题被埋在末尾。必须把它锁成无状态、无工具的纯总结器：
+> ```
+> claude -p --model haiku \
+>   --setting-sources '' --strict-mcp-config \
+>   --allowedTools '' \
+>   --disallowedTools 'Bash,Read,Edit,Write,Glob,Grep,WebFetch,WebSearch,Task,TodoWrite' \
+>   --system-prompt '你是终端标题生成器。只输出最多 6 个中文字…不要使用任何工具。' \
+>   "$ctx"
+> ```
+> 实测：禁工具后输出干净的「登录推送加密」，耗时 ~17s（异步、不阻塞）。
+> 附带收益：`--setting-sources ''` 让嵌套 claude 不加载任何 settings，
+> **本就不会再触发本 hook**——§5 的环境变量守卫退化为第二层保险。
 - 清洗：去掉换行、首尾空白，截断到合理长度（如 40 字）防止超长。
 - 写入：`printf '\033]2;%s\007' "$dir: $topic" > "$ttydev"`。
 
@@ -98,9 +114,11 @@ haiku 调用 2~4s，同步会给每次发言加可感延迟。
 spawn 的 `claude -p`。那个 headless claude 同样会触发 `UserPromptSubmit`
 → 又调 worker → 又 spawn `claude -p` → **无限递归**。
 
-解法：worker spawn `claude -p` 时其进程环境已带 `GHOSTTY_TITLE_HOOK=1`
-（由 §4.1 启动 worker 时设置并继承），该 headless claude 触发的 hook 在
-§4.1 第 1 步即 `exit 0` 短路。守卫是整条链能成立的前提。
+解法（双层）：① §4.2 的 `claude -p --setting-sources ''` 让嵌套 claude
+不加载 user/project/local 任何 settings，本就不会发现这个全局 hook；
+② 即便如此，worker spawn 时其进程环境已带 `GHOSTTY_TITLE_HOOK=1`（由 §4.1
+启动 worker 时设置并继承），任何被触发的 hook 在 §4.1 第 1 步即 `exit 0`
+短路。两层任一成立即可阻断递归。
 
 ## 6. 后台存活 vs. 写对窗口（核心坑）
 

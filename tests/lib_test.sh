@@ -23,6 +23,14 @@ assert_eq "extract last 3 user texts" "$want" "$got"
 got=$(gt_extract_recent_user_messages "$DIR/fixtures/nope.jsonl" 3)
 assert_eq "extract missing file empty" "" "$got"
 
+# extract first: the anchor task, stays stable while later messages drift
+got=$(gt_extract_first_user_message "$DIR/fixtures/transcript.jsonl")
+assert_eq "extract first user text" "第一条 帮我看登录" "$got"
+
+# state dir: GT_STATE_DIR overrides
+got=$(GT_STATE_DIR=/tmp/gt-x gt_state_dir)
+assert_eq "state dir override" "/tmp/gt-x" "$got"
+
 # sanitize: collapse newlines/spaces, trim
 got=$(gt_sanitize_title $'  联系人\n  cutover  ')
 assert_eq "sanitize collapse+trim" "联系人 cutover" "$got"

@@ -24,6 +24,26 @@ gt_sanitize_title() {
   printf '%s' "$raw" | cut -c1-40
 }
 
+# Print the FIRST non-empty user message text — the conversation's anchor task,
+# which stays stable while later messages drift. Same content rules as above.
+gt_extract_first_user_message() {
+  local transcript="$1"
+  [ -f "$transcript" ] || return 0
+  jq -r '
+    select(.type=="user")
+    | .message.content
+    | if type=="string" then .
+      elif type=="array" then (map(select(.type=="text").text) | join(" "))
+      else empty end
+  ' "$transcript" 2>/dev/null | grep -v '^[[:space:]]*$' | head -n 1
+}
+
+# Per-session cache dir for the last title and prompt counter, so the worker can
+# keep a stable title and throttle haiku calls. Overridable via GT_STATE_DIR.
+gt_state_dir() {
+  printf '%s' "${GT_STATE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/ghostty-claude-title}"
+}
+
 # Resolve the real controlling-tty device path. The hook is spawned detached
 # from the terminal (its own tty is ??), so we walk the parent chain until we
 # hit an ancestor that owns a real tty (the `claude`/shell process on the

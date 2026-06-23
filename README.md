@@ -17,7 +17,8 @@
 | `jq` | `command -v jq` | `brew install jq` |
 
 > 标题用的是你**自己的 Claude 订阅**调 `claude -p --model haiku`，无需额外 API key。
-> 每条消息一次 haiku 调用（很便宜），约 **15~20s 后台**出标题——异步，不阻塞你打字。
+> 标题倾向**保持稳定**，只在任务明显切换时才换；haiku 调用经过节流（开局定题、
+> 之后每几条复查一次），约 **15~20s 后台**出标题——异步，不阻塞你打字。
 
 ## 二、安装
 
@@ -77,10 +78,20 @@ jq '.hooks.UserPromptSubmit' ~/.claude/settings.json
         ├─ 后台启动 worker（带 GHOSTTY_TITLE_HOOK=1 守卫递归），自己秒退
         └─ ↓ Claude 不被阻塞
      bin/ghostty-title-worker.sh
-        ├─ 读最近 3 条 user 消息 + 当前 prompt
-        ├─ claude -p --model haiku（锁成无状态、无工具的纯总结器）→ 主题
+        ├─ 按 session_id 读缓存的上次标题与提交计数
+        ├─ 节流：开局前 2 条定题，之后每 5 条才复查一次；跳过的轮次
+        │   直接把缓存标题写回 tty（切 tab 回来也不丢），不调 haiku
+        ├─ 重算时喂「首要任务(首条 prompt) + 最近对话 + 当前消息」+ 上次标题
+        ├─ claude -p --model haiku（锁成无状态、无工具的纯总结器）
+        │   ├─ 同一主题 → 原样沿用旧标题（不抖动）
+        │   └─ 任务明显切换 → 给新的 6 字主题
         └─ OSC 2 写 tab 标题：printf '\033]2;目录: 主题\007' > /dev/ttysNNN
 ```
+
+> **为什么这样设计**：早期版本每条消息都用「最近 3 条」重算，标题会跟着
+> 局部话题漂移、跳来跳去，反而记不住这个窗口在干嘛。现在标题锚定在会话的
+> **首要任务**上并倾向保持稳定，只在任务真正切换时才换——一眼分清窗口用途。
+> 缓存落在 `~/.cache/ghostty-claude-title/`（每会话一份 `.title` + `.count`）。
 
 两个真机踩过的坑（已修，写在 `docs/superpowers/specs/` 里）：
 - `claude -p` 是带工具的 agent，裸调会探索代码跑 3 分钟——必须用
@@ -91,12 +102,14 @@ jq '.hooks.UserPromptSubmit' ~/.claude/settings.json
 ## 七、自测
 
 ```sh
-bash tests/run.sh   # 16 个行为测试，全绿即 OK
+bash tests/run.sh   # 全绿即 OK
 ```
 
 ## 调参
 
 - 标题语言/字数：改 `bin/ghostty-title-worker.sh` 里的 `sys` system prompt。
 - 上下文条数：同文件 `gt_extract_recent_user_messages "$transcript" 3` 的 `3`。
+- 更新频率：环境变量 `GT_WARMUP`（开局快速定题的条数，默认 2）、
+  `GT_RECOMPUTE_EVERY`（之后每几条复查一次换题，默认 5）。调大 = 更稳更省。
 - 触发时机：现在是每次提交（`UserPromptSubmit`）。想改成回答后触发可换成
   `Stop` hook（自行在 settings.json 调整）。
